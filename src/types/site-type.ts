@@ -1,3 +1,4 @@
+
 type Bay = {
     id: string;
     occupied: boolean;
@@ -6,13 +7,6 @@ type Bay = {
     warning?: boolean;
 };
 
-type ActivityEvent = {
-    id: number;
-    type: "entry" | "exit";
-    bay: string;
-    plate: string;
-    time: string;
-};
 
 type Site = {
     name: string;
@@ -20,4 +14,4 @@ type Site = {
     bays: Bay[];
 };
 
-export type { Bay, ActivityEvent, Site };
+export type { Bay, Site };

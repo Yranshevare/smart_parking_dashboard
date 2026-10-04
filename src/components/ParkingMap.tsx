@@ -1,7 +1,7 @@
 import { CircleParking, TriangleAlert } from "lucide-react";
 import SectionHeading from "./SectionHeading";
 import { cn } from "../lib/utils";
-import type { Site } from "../types";
+import type { Site } from "../types/site-type";
 
 
 export default function ParkingMap({ site }: { site: Site }) {

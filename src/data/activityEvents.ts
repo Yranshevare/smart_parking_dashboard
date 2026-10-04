@@ -1,4 +1,4 @@
-import type { ActivityEvent } from "../types";
+import type { ActivityEvent } from "../types/ActivityEvent-type";
 
 const activityEvents: ActivityEvent[] = [
     { id: 1, type: "entry", bay: "A01", plate: "KA 05 MK 2814", time: "10:42:18" },

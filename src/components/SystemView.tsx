@@ -1,7 +1,7 @@
 import { Building2, CheckCircle2, Clock3, Radio, Signal } from "lucide-react";
 import { cn } from "../lib/utils";
 import SectionHeading from "./SectionHeading";
-import type { Site } from "../types";
+import type { Site } from "../types/site-type";
 
 
 export default function SystemView({ site }: { site: Site }) {

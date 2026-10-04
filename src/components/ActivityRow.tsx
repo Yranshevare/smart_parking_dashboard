@@ -1,6 +1,6 @@
 import { ArrowDownLeft, ArrowUpRight } from "lucide-react";
 import { cn } from "../lib/utils";
-import type { ActivityEvent } from "../types";
+import type { ActivityEvent } from "../types/ActivityEvent-type";
 
 
 export default function ActivityRow({ event }: { event: ActivityEvent }) {

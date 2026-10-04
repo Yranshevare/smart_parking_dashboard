@@ -1,4 +1,4 @@
-import type { ActivityEvent } from "../types";
+import type { ActivityEvent } from "../types/ActivityEvent-type";
 import ActivityRow from "./ActivityRow";
 import SectionHeading from "./SectionHeading";
 

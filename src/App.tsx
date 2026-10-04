@@ -62,7 +62,7 @@ export default function App() {
                 </div>
             </header>
 
-            <main className="mx-auto max-w-screen-2xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+            <main className="mx-auto max-w-screen px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
                 <section className="mb-6 flex flex-col gap-5 border-b border-border pb-6 lg:flex-row lg:items-end lg:justify-between">
                     <div>
                         <p className="mb-1 text-xs font-bold uppercase tracking-widest text-muted-foreground">Live overview</p>
