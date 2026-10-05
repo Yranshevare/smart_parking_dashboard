@@ -1,7 +1,9 @@
-import { CheckCircle2, ChevronDown, CircleParking, MapPin, RefreshCw } from "lucide-react";
-import { useMemo, useState } from "react";
+import { CheckCircle2, ChevronDown, CircleParking, MapPin, TriangleAlert } from "lucide-react";
+import { onValue, ref } from "firebase/database";
+import { useEffect, useState } from "react";
 import { Button } from "./components/ui/button";
 import { cn } from "./lib/utils";
+import { database, firebaseConfigurationError } from "./lib/firebase";
 import Metric from "./components/Metric";
 import ParkingMap from "./components/ParkingMap";
 import RecentActivity from "./components/RecentActivity";
@@ -13,22 +15,128 @@ import tabs from "./data/tabs";
 
 type TabId = (typeof tabs)[number]["id"];
 
+type ParkingData = {
+    cars: number | null;
+    totalSlots: number | null;
+    connection: "connecting" | "connected" | "error";
+    message: string | null;
+    lastUpdated: string | null;
+};
+
+function isValidCount(value: unknown): value is number {
+    return typeof value === "number" && Number.isSafeInteger(value);
+}
+
 export default function App() {
     const [activeTab, setActiveTab] = useState<TabId>("dashboard");
     const [siteIndex, setSiteIndex] = useState(0);
-    const [lastUpdated, setLastUpdated] = useState("10:44:02");
-    const [refreshing, setRefreshing] = useState(false);
+    const [parkingData, setParkingData] = useState<ParkingData>({
+        cars: null,
+        totalSlots: null,
+        connection: "connecting",
+        message: null,
+        lastUpdated: null,
+    });
     const site = sites[siteIndex];
-    if (!site) return null;
-    const occupied = useMemo(() => site.bays.filter((bay) => bay.occupied).length, [site]);
-    const available = site.bays.length - occupied;
-    const occupancy = Math.round((occupied / site.bays.length) * 100);
 
-    const handleRefresh = () => {
-        setRefreshing(true);
-        setLastUpdated(new Date().toLocaleTimeString("en-GB", { hour12: false }));
-        window.setTimeout(() => setRefreshing(false), 500);
-    };
+    useEffect(() => {
+        if (!database) {
+            setParkingData((current) => ({
+                ...current,
+                connection: "error",
+                message: firebaseConfigurationError ?? "Firebase is not configured.",
+            }));
+            return;
+        }
+
+        const unsubscribe = onValue(
+            ref(database, "smartParking"),
+            (snapshot) => {
+                if (!snapshot.exists()) {
+                    setParkingData({
+                        cars: 0,
+                        totalSlots: 10,
+                        connection: "error",
+                        message: "No data found at /smartParking. Showing defaults: 0 cars and 10 total slots.",
+                        lastUpdated: null,
+                    });
+                    return;
+                }
+
+                const value: unknown = snapshot.val();
+                const data = value !== null && typeof value === "object" ? value as Record<string, unknown> : null;
+                const cars = data?.cars ?? 0;
+                const totalSlots = data?.totalSlots ?? 10;
+
+                if (!isValidCount(cars) || cars < 0) {
+                    setParkingData((current) => ({
+                        ...current,
+                        connection: "error",
+                        message: "Invalid Firebase value for cars. Expected a non-negative whole number.",
+                    }));
+                    return;
+                }
+
+                if (!isValidCount(totalSlots) || totalSlots <= 0) {
+                    setParkingData((current) => ({
+                        ...current,
+                        connection: "error",
+                        message: "Invalid Firebase value for totalSlots. Expected a positive whole number.",
+                    }));
+                    return;
+                }
+
+                if (cars > totalSlots) {
+                    setParkingData((current) => ({
+                        ...current,
+                        connection: "error",
+                        message: "Invalid parking data: cars cannot exceed totalSlots.",
+                    }));
+                    return;
+                }
+
+                const missingFields = [
+                    data?.cars == null ? "cars" : null,
+                    data?.totalSlots == null ? "totalSlots" : null,
+                ].filter((field): field is string => field !== null);
+
+                setParkingData({
+                    cars,
+                    totalSlots,
+                    connection: "connected",
+                    message: missingFields.length > 0
+                        ? `Missing ${missingFields.join(" and ")} in Firebase; using defaults (${cars} cars, ${totalSlots} total slots).`
+                        : null,
+                    lastUpdated: new Date().toLocaleTimeString("en-GB", { hour12: false }),
+                });
+            },
+            (error) => {
+                console.error("Firebase Realtime Database listener failed:", error);
+                setParkingData((current) => ({
+                    ...current,
+                    connection: "error",
+                    message: error.code === "PERMISSION_DENIED"
+                        ? "Firebase read permission denied. Check the database rules for /smartParking."
+                        : `Firebase connection failed: ${error.message}`,
+                }));
+            }
+        );
+
+        return unsubscribe;
+    }, []);
+
+    if (!site) return null;
+
+    const occupied = parkingData.cars;
+    const totalSlots = parkingData.totalSlots;
+    const available = occupied !== null && totalSlots !== null ? totalSlots - occupied : null;
+    const occupancy = occupied !== null && totalSlots !== null ? Math.round((occupied / totalSlots) * 100) : 0;
+    const parkingIsFull = occupied !== null && totalSlots !== null && occupied >= totalSlots;
+    const connectionLabel = parkingData.connection === "connected"
+        ? "Firebase connected"
+        : parkingData.connection === "connecting"
+            ? "Connecting to Firebase"
+            : "Firebase unavailable";
 
     return (
         <div className="min-h-screen bg-background text-foreground">
@@ -43,21 +151,25 @@ export default function App() {
                             <p className="truncate text-xs text-muted-foreground">Operations control</p>
                         </div>
                     </div>
-                    <div className="hidden items-center gap-2 text-sm text-muted-foreground sm:flex">
+                    <div className="hidden items-center gap-2 text-sm text-muted-foreground sm:flex" role="status">
                         <span className="relative flex size-2">
-                            <span className="absolute inline-flex size-full animate-ping rounded-full bg-success opacity-40 motion-reduce:animate-none" />
-                            <span className="relative inline-flex size-2 rounded-full bg-success" />
+                            {parkingData.connection === "connected" && (
+                                <span className="absolute inline-flex size-full animate-ping rounded-full bg-success opacity-40 motion-reduce:animate-none" />
+                            )}
+                            <span className={cn(
+                                "relative inline-flex size-2 rounded-full",
+                                parkingData.connection === "connected" ? "bg-success" : "bg-warning"
+                            )} />
                         </span>
-                        All systems operational
+                        {connectionLabel}
                     </div>
                     <div className="flex items-center gap-2">
                         <div className="hidden text-right lg:block">
                             <p className="text-xs font-medium">Last updated</p>
-                            <p className="font-mono text-xs text-muted-foreground">Today, {lastUpdated}</p>
+                            <p className="font-mono text-xs text-muted-foreground">
+                                {parkingData.lastUpdated ? `Today, ${parkingData.lastUpdated}` : "Waiting for data"}
+                            </p>
                         </div>
-                        <Button variant="icon" onClick={handleRefresh} aria-label="Refresh live data" title="Refresh live data">
-                            <RefreshCw className={cn("size-4", refreshing && "animate-spin")} aria-hidden="true" />
-                        </Button>
                     </div>
                 </div>
             </header>
@@ -122,19 +234,24 @@ export default function App() {
                                     <div>
                                         <p className="text-sm font-semibold text-muted-foreground">Current occupancy</p>
                                         <div className="mt-2 flex items-baseline gap-3">
-                                            <strong className="text-6xl font-bold leading-none tabular-nums sm:text-7xl">{occupied}</strong>
-                                            <span className="text-2xl font-medium text-muted-foreground sm:text-3xl">/ {site.bays.length}</span>
+                                            <strong className="text-6xl font-bold leading-none tabular-nums sm:text-7xl">{occupied ?? "--"}</strong>
+                                            <span className="text-2xl font-medium text-muted-foreground sm:text-3xl">/ {totalSlots ?? "--"}</span>
                                         </div>
-                                        <p className="mt-3 text-lg font-semibold">Vehicles parked</p>
+                                        <p className="mt-3 text-lg font-semibold">Cars parked</p>
                                     </div>
-                                    <span className="inline-flex items-center gap-2 rounded-full bg-success-soft px-3 py-1.5 text-xs font-bold text-success-strong">
-                                        <CheckCircle2 className="size-4" aria-hidden="true" />
-                                        Spaces available
+                                    <span className={cn(
+                                        "inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-bold",
+                                        parkingIsFull ? "bg-occupied-soft text-occupied" : "bg-success-soft text-success-strong"
+                                    )}>
+                                        {parkingIsFull
+                                            ? <TriangleAlert className="size-4" aria-hidden="true" />
+                                            : <CheckCircle2 className="size-4" aria-hidden="true" />}
+                                        {occupied === null ? "Waiting for data" : parkingIsFull ? "FULL" : "AVAILABLE"}
                                     </span>
                                 </div>
                                 <div className="mb-3 flex items-center justify-between text-sm font-semibold">
-                                    <span>{occupancy}% occupancy</span>
-                                    <span className="text-success-strong">{available} available</span>
+                                    <span>{occupied === null ? "--" : `${occupancy}%`} occupancy</span>
+                                    <span className="text-success-strong">{available ?? "--"} available</span>
                                 </div>
                                 <div
                                     className="h-2.5 overflow-hidden rounded-full bg-muted"
@@ -151,8 +268,8 @@ export default function App() {
                                 </div>
                             </div>
                             <div className="grid grid-cols-2 divide-x divide-border sm:grid-cols-3 lg:grid-cols-1 lg:divide-x-0 lg:divide-y">
-                                <Metric label="Available spaces" value={String(available)} detail="Ready for entry" tone="success" />
-                                <Metric label="Sensor health" value={`${site.bays.length}/${site.bays.length}`} detail="All sensors online" />
+                                <Metric label="Available slots" value={String(available ?? "--")} detail="Ready for entry" tone="success" />
+                                <Metric label="Total slots" value={String(totalSlots ?? "--")} detail="Parking capacity" />
                                 <Metric
                                     label="Peak today"
                                     value="82%"
@@ -160,6 +277,17 @@ export default function App() {
                                     className="col-span-2 border-t border-border sm:col-span-1 sm:border-t-0 lg:border-t"
                                 />
                             </div>
+                            {parkingData.message && (
+                                <p
+                                    className={cn(
+                                        "col-span-full border-t border-border px-6 py-3 text-sm sm:px-8 lg:px-10",
+                                        parkingData.connection === "error" ? "text-destructive" : "text-muted-foreground"
+                                    )}
+                                    role={parkingData.connection === "error" ? "alert" : "status"}
+                                >
+                                    {parkingData.message}
+                                </p>
+                            )}
                         </section>
 
                         <div className="grid gap-6 xl:grid-cols-[minmax(0,1.6fr)_minmax(320px,0.8fr)]">
